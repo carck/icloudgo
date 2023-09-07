@@ -71,9 +71,17 @@ func NewDownloadFlag() []cli.Flag {
 			Name:     "auto-delete",
 			Usage:    "Automatically delete photos from local but recently deleted folders",
 			Required: false,
-			Value:    true,
+			Value:    false,
 			Aliases:  []string{"ad"},
 			EnvVars:  []string{"ICLOUD_AUTO_DELETE"},
+		},
+		&cli.BoolFlag{
+			Name:     "delete-after-download",
+			Usage:    "Automatically delete photos from icloud after download",
+			Required: false,
+			Value:    false,
+			Aliases:  []string{"dr"},
+			EnvVars:  []string{"ICLOUD_DELETE_AFTER_DOWNLOAD"},
 		},
 	)
 	return res
@@ -108,6 +116,7 @@ type downloadCommand struct {
 	AlbumName       string
 	ThreadNum       int
 	AutoDelete      bool
+	DelDownloaded   bool
 	FolderStructure string
 	FileStructure   string
 
@@ -130,6 +139,7 @@ func newDownloadCommand(c *cli.Context) (*downloadCommand, error) {
 		AlbumName:       c.String("album"),
 		ThreadNum:       c.Int("thread-num"),
 		AutoDelete:      c.Bool("auto-delete"),
+		DelDownloaded:   c.Bool("delete-after-download"),
 		FolderStructure: c.String("folder-structure"),
 		FileStructure:   c.String("file-structure"),
 		lock:            &sync.Mutex{},
@@ -183,6 +193,11 @@ func (r *downloadCommand) saveMeta() (err error) {
 	}
 
 	for {
+		if cnt := r.dalCountUnDownloadAssets(); cnt > 0 && r.DelDownloaded {
+			fmt.Printf("[icloudgo] [meta] walk photos queue not empty: %d\n", cnt)
+			time.Sleep(time.Minute)
+			continue
+		}
 		dbOffset := r.dalGetDownloadOffset(album.Size())
 		fmt.Printf("[icloudgo] [meta] album: %s, total: %d, db_offset: %d, target: %s, thread-num: %d, stop-num: %d\n", album.Name, album.Size(), dbOffset, r.Output, r.ThreadNum, r.StopNum)
 		err = album.WalkPhotos(dbOffset, func(offset int, assets []*internal.PhotoAsset) error {
@@ -295,7 +310,7 @@ func (r *downloadCommand) downloadFromDatabase() error {
 				}
 
 				if isDownloaded, err := r.downloadPhotoAsset(photoAsset, pickReason); err != nil {
-					if errors.Is(err, internal.ErrResourceGone) || strings.Contains(err.Error(), "no such host") {
+					if r.DelDownloaded || errors.Is(err, internal.ErrResourceGone) || strings.Contains(err.Error(), "no such host") {
 						// delete db
 						if err := r.dalDeleteAsset(photoAsset.ID()); err != nil {
 							fmt.Printf("[icloudgo] [download] remove gone resource failed: %s\n", err)
@@ -305,6 +320,12 @@ func (r *downloadCommand) downloadFromDatabase() error {
 					addError("downloadPhotoAsset", err)
 					continue
 				} else if isDownloaded {
+					if r.DelDownloaded {
+						if err = photoAsset.Delete(); err != nil {
+							addError("deleteAferDownloaded[downloaded]", err)
+
+						}
+					}
 					if err = r.dalSetDownloaded(photoAsset.ID()); err != nil {
 						addError("dalSetDownloaded[downloaded]", err)
 						continue

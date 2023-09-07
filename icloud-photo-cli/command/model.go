@@ -55,6 +55,25 @@ func (r *downloadCommand) dalDeleteAsset(id string) error {
 	})
 }
 
+func (r *downloadCommand) dalCountUnDownloadAssets() (cnt int) {
+	r.lock.Lock()
+	defer r.lock.Unlock()
+
+	cnt = 0
+	r.db.Update(func(txn *badger.Txn) error {
+		opts := badger.DefaultIteratorOptions
+		opts.PrefetchValues = false
+		it := txn.NewIterator(opts)
+		defer it.Close()
+		for it.Seek(r.keyAssertPrefix()); it.ValidForPrefix(r.keyAssertPrefix()); it.Next() {
+			cnt = cnt + 1
+		}
+		return nil
+	})
+
+	return cnt
+}
+
 func (r *downloadCommand) dalGetUnDownloadAssets(status *int) ([]*PhotoAssetModel, error) {
 	r.lock.Lock()
 	defer r.lock.Unlock()
@@ -89,6 +108,9 @@ func (r *downloadCommand) dalSetDownloaded(id string) error {
 	defer r.lock.Unlock()
 
 	return r.db.Update(func(txn *badger.Txn) error {
+		if r.DelDownloaded {
+			return txn.Delete(r.keyAssert(id))
+		}
 		item, err := txn.Get(r.keyAssert(id))
 		if err != nil {
 			return err
@@ -117,6 +139,10 @@ func (r *downloadCommand) keyAssert(id string) []byte {
 func (r *downloadCommand) dalGetDownloadOffset(albumSize int) int {
 	r.lock.Lock()
 	defer r.lock.Unlock()
+
+	if r.DelDownloaded {
+		return 0
+	}
 
 	var result int
 	_ = r.db.Update(func(txn *badger.Txn) error {
