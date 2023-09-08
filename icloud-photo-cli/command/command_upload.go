@@ -35,8 +35,8 @@ func Upload(c *cli.Context) error {
 	cli, err := icloudgo.New(&icloudgo.ClientOption{
 		AppID:           username,
 		CookieDir:       cookieDir,
-		PasswordGetter:  getTextInput("apple id password", password),
-		TwoFACodeGetter: getTextInput("2fa code", ""),
+		PasswordGetter:  getTextInput("apple id password", password, true),
+		TwoFACodeGetter: getTextInput("2fa code", "", false),
 		Domain:          domain,
 	})
 	if err != nil {

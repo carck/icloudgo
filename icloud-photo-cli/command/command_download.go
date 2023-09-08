@@ -153,8 +153,8 @@ func newDownloadCommand(c *cli.Context) (*downloadCommand, error) {
 	cli, err := icloudgo.New(&icloudgo.ClientOption{
 		AppID:           cmd.Username,
 		CookieDir:       cmd.CookieDir,
-		PasswordGetter:  getTextInput("apple id password", cmd.Password),
-		TwoFACodeGetter: getTextInput("2fa code", ""),
+		PasswordGetter:  getTextInput("apple id password", cmd.Password, true),
+		TwoFACodeGetter: getTextInput("2fa code", "", false),
 		Domain:          cmd.Domain,
 	})
 	if err != nil {
