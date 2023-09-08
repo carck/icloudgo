@@ -539,7 +539,6 @@ func (r *assertQueue) pick(percent float32) (*icloudgo.PhotoAsset, string) {
 		if r.lowIndex < r.highIndex {
 			return r.oldAssets[r.lowIndex], "small"
 		}
-		return nil, ""
 	}
 
 	// 50% ~ 80% 的概率从 [大数据] 中选取
