@@ -380,7 +380,7 @@ func (r *downloadCommand) downloadPhotoAssetVersion(photo *icloudgo.PhotoAsset, 
 	}
 
 	if f, _ := os.Stat(path); f != nil {
-		if photo.Size() != int(f.Size()) {
+		if photo.Size(version) != int(f.Size()) {
 			return false, r.downloadTo(pickReason, photo, tmpPath, path, name, version)
 		} else {
 			// fmt.Printf("[icloudgo] [download] '%s' exist, skip.\n", path)
@@ -393,14 +393,14 @@ func (r *downloadCommand) downloadPhotoAssetVersion(photo *icloudgo.PhotoAsset, 
 
 func (r *downloadCommand) downloadTo(pickReason string, photo *icloudgo.PhotoAsset, tmpPath, realPath, saveName string, version icloudgo.PhotoVersion) (err error) {
 	start := time.Now()
-	fmt.Printf("[icloudgo] [download] [%s] start %v, %v, %v\n", pickReason, saveName, photo.Filename(), photo.FormatSize())
+	fmt.Printf("[icloudgo] [download] [%s] start %v, %v, %v\n", pickReason, saveName, photo.Filename(), photo.FormatSize(version))
 	defer func() {
 		diff := time.Now().Sub(start)
-		speed := float64(photo.Size()) / 1024 / diff.Seconds()
+		speed := float64(photo.Size(version)) / 1024 / diff.Seconds()
 		if err != nil && !errors.Is(err, internal.ErrResourceGone) && !strings.Contains(err.Error(), "no such host") {
-			fmt.Printf("[icloudgo] [download] fail %v, %v, %v/%v %.2fKB/s err=%s\n", saveName, photo.Filename(), photo.FormatSize(), diff, speed, err)
+			fmt.Printf("[icloudgo] [download] fail %v, %v, %v/%v %.2fKB/s err=%s\n", saveName, photo.Filename(), photo.FormatSize(version), diff, speed, err)
 		} else {
-			fmt.Printf("[icloudgo] [download] [%s] succ %v, %v, %v/%v %.2fKB/s\n", pickReason, saveName, photo.Filename(), photo.FormatSize(), diff, speed)
+			fmt.Printf("[icloudgo] [download] [%s] succ %v, %v, %v/%v %.2fKB/s\n", pickReason, saveName, photo.Filename(), photo.FormatSize(version), diff, speed)
 		}
 	}()
 	retry := 5
@@ -450,7 +450,7 @@ func (r *downloadCommand) autoDeletePhoto() (err error) {
 					}
 					return err
 				}
-				fmt.Printf("[icloudgo] [auto_delete] delete %v, %v, %v\n", photoAsset.ID(), photoAsset.Filename(), photoAsset.FormatSize())
+				fmt.Printf("[icloudgo] [auto_delete] delete %v, %v, %v\n", photoAsset.ID(), photoAsset.Filename(), photoAsset.FormatSize(icloudgo.PhotoVersionOriginal))
 			}
 			return nil
 		}); err != nil {
@@ -481,7 +481,7 @@ func (r *downloadCommand) getUnDownloadAssets() (*assertQueue, error) {
 		photoAssetList = append(photoAssetList, r.photoCli.NewPhotoAssetFromBytes([]byte(po.Data)))
 	}
 	sort.SliceStable(photoAssetList, func(i, j int) bool {
-		return photoAssetList[i].Size() < photoAssetList[j].Size()
+		return photoAssetList[i].Size(icloudgo.PhotoVersionOriginal) < photoAssetList[j].Size(icloudgo.PhotoVersionOriginal)
 	})
 
 	return newAssertQueue(photoAssetList), nil

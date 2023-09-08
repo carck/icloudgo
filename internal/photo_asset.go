@@ -95,12 +95,12 @@ func (r *PhotoAsset) ID() string {
 	return r._masterRecord.RecordName
 }
 
-func (r *PhotoAsset) Size() int {
-	return r._masterRecord.Fields.ResOriginalRes.Value.Size
+func (r *PhotoAsset) Size(version PhotoVersion) int {
+	return r.getVersions()[version].Size
 }
 
-func (r *PhotoAsset) FormatSize() string {
-	return formatSize(r.Size())
+func (r *PhotoAsset) FormatSize(version PhotoVersion) string {
+	return formatSize(r.Size(version))
 }
 
 func (r *PhotoAsset) Created() time.Time {
