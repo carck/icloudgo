@@ -35,6 +35,13 @@ func main() {
 				Flags:       command.NewListDBFlag(),
 				Action:      command.ListDB,
 			},
+			{
+				Name:        "list-album",
+				Aliases:     []string{"lbm"},
+				Description: "list albums",
+				Flags:       command.NewListAlbumFlag(),
+				Action:      command.ListAlbum,
+			},
 		},
 	}
 	if err := app.Run(os.Args); err != nil {
