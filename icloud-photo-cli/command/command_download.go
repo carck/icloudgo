@@ -336,7 +336,7 @@ func (r *downloadCommand) downloadFromDatabase() error {
 				} else {
 					if r.DelDownloaded {
 						if err = photoAsset.Delete(); err != nil {
-							addError("deleteAferDownloaded[downloaded]", err)
+							addError("deleteAferDownloaded[download]", err)
 						}
 					}
 					if err = r.dalSetDownloaded(photoAsset.ID()); err != nil {

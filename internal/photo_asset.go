@@ -17,6 +17,13 @@ type PhotoAsset struct {
 	lock          *sync.Mutex
 }
 
+var extMap = map[string]string{
+	"public.heic":               ".HEIC",
+	"public.jpeg":               ".jpg",
+	"public.png":                ".png",
+	"com.apple.quicktime-movie": ".MOV",
+}
+
 func (r *PhotoAsset) Bytes() []byte {
 	bs, _ := json.Marshal(photoAssetData{
 		MasterRecord: r._masterRecord,
@@ -55,7 +62,15 @@ func (r *PhotoAsset) Filename() string {
 		}
 	}
 
-	return cleanFilename(r.ID())
+	return cleanFilename(r.ID() + r.FileExt())
+}
+
+func (r *PhotoAsset) FileExt() string {
+	if ext, ok := extMap[r._masterRecord.Fields.ItemType.Value]; ok {
+		return ext
+	} else {
+		return ""
+	}
 }
 
 func (r *PhotoAsset) LocalPath(outputDir string, size PhotoVersion, fileStructure string) string {
