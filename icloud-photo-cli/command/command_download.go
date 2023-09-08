@@ -323,7 +323,6 @@ func (r *downloadCommand) downloadFromDatabase() error {
 					if r.DelDownloaded {
 						if err = photoAsset.Delete(); err != nil {
 							addError("deleteAferDownloaded[downloaded]", err)
-
 						}
 					}
 					if err = r.dalSetDownloaded(photoAsset.ID()); err != nil {
@@ -335,6 +334,11 @@ func (r *downloadCommand) downloadFromDatabase() error {
 						return
 					}
 				} else {
+					if r.DelDownloaded {
+						if err = photoAsset.Delete(); err != nil {
+							addError("deleteAferDownloaded[downloaded]", err)
+						}
+					}
 					if err = r.dalSetDownloaded(photoAsset.ID()); err != nil {
 						addError("dalSetDownloaded[download]", err)
 						continue
@@ -349,9 +353,26 @@ func (r *downloadCommand) downloadFromDatabase() error {
 }
 
 func (r *downloadCommand) downloadPhotoAsset(photo *icloudgo.PhotoAsset, pickReason string) (bool, error) {
+	downloaded := false
+	if res, err := r.downloadPhotoAssetVersion(photo, pickReason, icloudgo.PhotoVersionOriginal); err != nil {
+		return res, err
+	} else {
+		downloaded = res
+	}
+	if photo.IsLivePhoto() {
+		if res, err := r.downloadPhotoAssetVersion(photo, pickReason, icloudgo.PhotoVersionOriginalVideo); err != nil {
+			return res, err
+		} else {
+			downloaded = res || downloaded
+		}
+	}
+	return downloaded, nil
+}
+
+func (r *downloadCommand) downloadPhotoAssetVersion(photo *icloudgo.PhotoAsset, pickReason string, version icloudgo.PhotoVersion) (bool, error) {
 	outputDir := photo.OutputDir(r.Output, r.FolderStructure)
-	tmpPath := photo.LocalPath(filepath.Join(r.Output, ".tmp"), icloudgo.PhotoVersionOriginal, r.FileStructure)
-	path := photo.LocalPath(outputDir, icloudgo.PhotoVersionOriginal, r.FileStructure)
+	tmpPath := photo.LocalPath(filepath.Join(r.Output, ".tmp"), version, r.FileStructure)
+	path := photo.LocalPath(outputDir, version, r.FileStructure)
 	name := path[len(r.Output):]
 	if err := os.MkdirAll(outputDir, os.ModePerm); err != nil {
 		fmt.Printf("[icloudgo] [download] [%s] mkdir '%s' output dir: '%s' failed: %s\n", pickReason, photo.Filename(), outputDir, err)
@@ -360,17 +381,17 @@ func (r *downloadCommand) downloadPhotoAsset(photo *icloudgo.PhotoAsset, pickRea
 
 	if f, _ := os.Stat(path); f != nil {
 		if photo.Size() != int(f.Size()) {
-			return false, r.downloadTo(pickReason, photo, tmpPath, path, name)
+			return false, r.downloadTo(pickReason, photo, tmpPath, path, name, version)
 		} else {
 			// fmt.Printf("[icloudgo] [download] '%s' exist, skip.\n", path)
 			return true, nil
 		}
 	} else {
-		return false, r.downloadTo(pickReason, photo, tmpPath, path, name)
+		return false, r.downloadTo(pickReason, photo, tmpPath, path, name, version)
 	}
 }
 
-func (r *downloadCommand) downloadTo(pickReason string, photo *icloudgo.PhotoAsset, tmpPath, realPath, saveName string) (err error) {
+func (r *downloadCommand) downloadTo(pickReason string, photo *icloudgo.PhotoAsset, tmpPath, realPath, saveName string, version icloudgo.PhotoVersion) (err error) {
 	start := time.Now()
 	fmt.Printf("[icloudgo] [download] [%s] start %v, %v, %v\n", pickReason, saveName, photo.Filename(), photo.FormatSize())
 	defer func() {
@@ -384,7 +405,7 @@ func (r *downloadCommand) downloadTo(pickReason string, photo *icloudgo.PhotoAss
 	}()
 	retry := 5
 	for i := 0; i < retry; i++ {
-		if err := photo.DownloadTo(icloudgo.PhotoVersionOriginal, tmpPath); err != nil {
+		if err := photo.DownloadTo(version, tmpPath); err != nil {
 			if strings.Contains(err.Error(), "i/o timeout") && i < retry-1 {
 				continue
 			}

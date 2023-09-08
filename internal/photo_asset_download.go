@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -12,10 +13,18 @@ import (
 type PhotoVersion string
 
 const (
-	PhotoVersionOriginal PhotoVersion = "original"
-	PhotoVersionMedium   PhotoVersion = "medium"
-	PhotoVersionThumb    PhotoVersion = "thumb"
+	PhotoVersionOriginal      PhotoVersion = "original"
+	PhotoVersionOriginalVideo              = "originalVideo"
+	PhotoVersionMedium        PhotoVersion = "medium"
+	PhotoVersionThumb         PhotoVersion = "thumb"
 )
+
+var extRegexp = regexp.MustCompile("\\.[^.]+$")
+
+func (r *PhotoAsset) IsLivePhoto() bool {
+	_, ok := r.getVersions()[PhotoVersionOriginalVideo]
+	return ok
+}
 
 func (r *PhotoAsset) DownloadTo(version PhotoVersion, target string) error {
 	body, err := r.Download(version)
@@ -93,61 +102,27 @@ func (r *PhotoAsset) getVersions() map[PhotoVersion]*photoVersionDetail {
 func (r *PhotoAsset) packVersion() map[PhotoVersion]*photoVersionDetail {
 	fields := r._masterRecord.Fields
 
-	if fields.ResVidSmallRes.Type != "" || fields.ResVidSmallRes.Value.Size != 0 {
-		return map[PhotoVersion]*photoVersionDetail{
-			PhotoVersionOriginal: {
-				Filename: r.Filename(),
-				Width:    fields.ResOriginalWidth.Value,
-				Height:   fields.ResOriginalHeight.Value,
-				Size:     fields.ResOriginalRes.Value.Size,
-				URL:      fields.ResOriginalRes.Value.DownloadURL,
-				Type:     fields.ResOriginalFileType.Value,
-			},
-			PhotoVersionMedium: {
-				Filename: r.Filename(),
-				Width:    fields.ResJPEGMedWidth.Value,
-				Height:   fields.ResJPEGMedHeight.Value,
-				Size:     fields.ResJPEGMedRes.Value.Size,
-				URL:      fields.ResJPEGMedRes.Value.DownloadURL,
-				Type:     fields.ResJPEGMedFileType.Value,
-			},
-			PhotoVersionThumb: {
-				Filename: r.Filename(),
-				Width:    fields.ResJPEGThumbWidth.Value,
-				Height:   fields.ResJPEGThumbHeight.Value,
-				Size:     fields.ResJPEGThumbRes.Value.Size,
-				URL:      fields.ResJPEGThumbRes.Value.DownloadURL,
-				Type:     fields.ResJPEGThumbFileType.Value,
-			},
-		}
-	} else {
-		return map[PhotoVersion]*photoVersionDetail{
-			PhotoVersionOriginal: {
-				Filename: r.Filename(),
-				Width:    fields.ResOriginalWidth.Value,
-				Height:   fields.ResOriginalHeight.Value,
-				Size:     fields.ResOriginalRes.Value.Size,
-				URL:      fields.ResOriginalRes.Value.DownloadURL,
-				Type:     fields.ResOriginalFileType.Value,
-			},
-			PhotoVersionMedium: {
-				Filename: r.Filename(),
-				Width:    fields.ResVidMedWidth.Value,
-				Height:   fields.ResVidMedHeight.Value,
-				Size:     fields.ResVidMedRes.Value.Size,
-				URL:      fields.ResVidMedRes.Value.DownloadURL,
-				Type:     fields.ResVidMedFileType.Value,
-			},
-			PhotoVersionThumb: {
-				Filename: r.Filename(),
-				Width:    fields.ResVidSmallWidth.Value,
-				Height:   fields.ResVidSmallHeight.Value,
-				Size:     fields.ResVidSmallRes.Value.Size,
-				URL:      fields.ResVidSmallRes.Value.DownloadURL,
-				Type:     fields.ResVidSmallFileType.Value,
-			},
+	versions := map[PhotoVersion]*photoVersionDetail{
+		PhotoVersionOriginal: {
+			Filename: r.Filename(),
+			Width:    fields.ResOriginalWidth.Value,
+			Height:   fields.ResOriginalHeight.Value,
+			Size:     fields.ResOriginalRes.Value.Size,
+			URL:      fields.ResOriginalRes.Value.DownloadURL,
+			Type:     fields.ResOriginalFileType.Value,
+		},
+	}
+	if fields.ResOriginalVidComplRes.Value.Size != 0 {
+		versions[PhotoVersionOriginalVideo] = &photoVersionDetail{
+			Filename: extRegexp.ReplaceAllString(r.Filename(), ".MOV"),
+			Width:    fields.ResOriginalVidComplWidth.Value,
+			Height:   fields.ResOriginalVidComplHeight.Value,
+			Size:     fields.ResOriginalVidComplRes.Value.Size,
+			URL:      fields.ResOriginalVidComplRes.Value.DownloadURL,
+			Type:     fields.ResOriginalVidComplFileType.Value,
 		}
 	}
+	return versions
 }
 
 type photoVersionDetail struct {

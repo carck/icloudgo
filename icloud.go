@@ -40,7 +40,8 @@ const (
 type PhotoVersion = internal.PhotoVersion
 
 const (
-	PhotoVersionOriginal = internal.PhotoVersionOriginal
-	PhotoVersionMedium   = internal.PhotoVersionMedium
-	PhotoVersionThumb    = internal.PhotoVersionThumb
+	PhotoVersionOriginal      = internal.PhotoVersionOriginal
+	PhotoVersionOriginalVideo = internal.PhotoVersionOriginalVideo
+	PhotoVersionMedium        = internal.PhotoVersionMedium
+	PhotoVersionThumb         = internal.PhotoVersionThumb
 )
