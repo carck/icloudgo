@@ -252,8 +252,12 @@ func (r *downloadCommand) download() (err error) {
 			fmt.Printf("[icloudgo] [download] download err: %s, sleep %s", err, short)
 			timer.Reset(short)
 		} else {
-			fmt.Printf("[icloudgo] [download] download success, sleep %s", long)
-			timer.Reset(long)
+			sleepDuration := long
+			if cnt := r.dalCountUnDownloadAssets(); cnt > 0 && r.DelDownloaded {
+				sleepDuration = short
+			}
+			fmt.Printf("[icloudgo] [download] download success, sleep %s", sleepDuration)
+			timer.Reset(sleepDuration)
 		}
 	}
 	for {
@@ -381,9 +385,10 @@ func (r *downloadCommand) downloadPhotoAssetVersion(photo *icloudgo.PhotoAsset, 
 
 	if f, _ := os.Stat(path); f != nil {
 		if photo.Size(version) != int(f.Size()) {
+			fmt.Printf("[icloudgo] [download] '%s' but size diff %d %d .\n", path, photo.Size(version), int(f.Size()))
 			return false, r.downloadTo(pickReason, photo, tmpPath, path, name, version)
 		} else {
-			// fmt.Printf("[icloudgo] [download] '%s' exist, skip.\n", path)
+			fmt.Printf("[icloudgo] [download] '%s' exist, skip.\n", path)
 			return true, nil
 		}
 	} else {

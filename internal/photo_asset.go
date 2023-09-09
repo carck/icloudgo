@@ -104,7 +104,7 @@ func (r *PhotoAsset) FormatSize(version PhotoVersion) string {
 }
 
 func (r *PhotoAsset) Created() time.Time {
-	return time.UnixMilli(r._masterRecord.Created.Timestamp)
+	return time.UnixMilli(r._masterRecord.Fields.OriginalCreationDate.Value)
 }
 
 func (r *PhotoAsset) OutputDir(output, folderStructure string) string {

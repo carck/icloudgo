@@ -171,6 +171,7 @@ func (r *PhotoAlbum) listQueryGenerate(offset, limit int, listType string, direc
 			"itemType",
 			"dataClassType",
 			"filenameEnc",
+			"originalCreationDate",
 			"originalOrientation",
 			"resOriginalWidth",
 			"resOriginalHeight",
@@ -264,6 +265,10 @@ type photoRecord struct {
 			} `json:"value"`
 			Type string `json:"type"`
 		} `json:"resJPEGMedRes,omitempty"`
+		OriginalCreationDate struct {
+			Value int64  `json:"value"`
+			Type  string `json:"type"`
+		} `json:"originalCreationDate,omitempty"`
 		OriginalOrientation struct {
 			Value int    `json:"value"`
 			Type  string `json:"type"`
