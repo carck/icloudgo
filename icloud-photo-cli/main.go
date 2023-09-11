@@ -42,6 +42,13 @@ func main() {
 				Flags:       command.NewListAlbumFlag(),
 				Action:      command.ListAlbum,
 			},
+			{
+				Name:        "list-duplicate",
+				Aliases:     []string{"lpc"},
+				Description: "list duplicates",
+				Flags:       command.NewListDuplicateFlag(),
+				Action:      command.ListDuplicate,
+			},
 		},
 	}
 	if err := app.Run(os.Args); err != nil {
