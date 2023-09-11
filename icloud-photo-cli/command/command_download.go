@@ -1,6 +1,7 @@
 package command
 
 import (
+	"database/sql"
 	"errors"
 	"fmt"
 	"os"
@@ -14,6 +15,7 @@ import (
 	"github.com/chyroc/icloudgo"
 	"github.com/chyroc/icloudgo/internal"
 	"github.com/dgraph-io/badger/v3"
+	_ "github.com/mattn/go-sqlite3"
 	"github.com/urfave/cli/v2"
 )
 
@@ -83,6 +85,19 @@ func NewDownloadFlag() []cli.Flag {
 			Aliases:  []string{"dr"},
 			EnvVars:  []string{"ICLOUD_DELETE_AFTER_DOWNLOAD"},
 		},
+		&cli.StringFlag{
+			Name:     "hash-db",
+			Usage:    "hash db to check for duplicate",
+			Required: false,
+			EnvVars:  []string{"ICLOUD_HASH_DB"},
+		},
+		&cli.StringFlag{
+			Name:     "duplicate-action",
+			Usage:    "action for files detected as duplicates",
+			Required: false,
+			Value:    "log",
+			EnvVars:  []string{"ICLOUD_DUPLICATE_ACTION"},
+		},
 	)
 	return res
 }
@@ -119,10 +134,12 @@ type downloadCommand struct {
 	DelDownloaded   bool
 	FolderStructure string
 	FileStructure   string
+	DuplicateAction string
 
 	client        *icloudgo.Client
 	photoCli      *icloudgo.PhotoService
 	db            *badger.DB
+	hashDb        *sql.DB
 	lock          *sync.Mutex
 	exit          chan struct{}
 	startDownload chan struct{}
@@ -174,11 +191,38 @@ func newDownloadCommand(c *cli.Context) (*downloadCommand, error) {
 		return nil, err
 	}
 
+	if c.String("hash-db") != "" {
+		if hashDb, err := sql.Open("sqlite3", c.String("hash-db")); err != nil {
+			return nil, err
+		} else {
+			cmd.hashDb = hashDb
+		}
+	}
 	cmd.client = cli
 	cmd.photoCli = photoCli
 	cmd.db = db
 
 	return cmd, nil
+}
+
+func (r *downloadCommand) checkDuplicate(path string, size int) (bool, error) {
+	if r.hashDb == nil {
+		return false, nil
+	}
+
+	hash, hErr := Hash(path)
+	if hErr != nil {
+		return false, hErr
+	}
+
+	if stmt, err := r.hashDb.Prepare("select count(*) as cnt from files where file_hash=? and file_size= ?"); err != nil {
+		return false, err
+	} else {
+		defer stmt.Close()
+		var cnt int64
+		err = stmt.QueryRow(hash, size).Scan(&cnt)
+		return cnt > 0, err
+	}
 }
 
 func (r *downloadCommand) saveMeta() (err error) {
@@ -418,6 +462,20 @@ func (r *downloadCommand) downloadTo(pickReason string, photo *icloudgo.PhotoAss
 		}
 	}
 
+	if duplicate, err := r.checkDuplicate(tmpPath, photo.Size(version)); duplicate || err != nil {
+		if err != nil {
+			return err
+		}
+		fmt.Printf("[icloudgo] [download] duplicate detected %s", realPath)
+
+		if r.DuplicateAction == "delete" {
+			if fErr := os.Remove(tmpPath); fErr != nil {
+				return fErr
+			}
+			return nil
+		}
+	}
+
 	if err := os.Rename(tmpPath, realPath); err != nil {
 		return fmt.Errorf("rename '%s' to '%s' failed: %w", tmpPath, realPath, err)
 	}
@@ -469,6 +527,9 @@ func (r *downloadCommand) autoDeletePhoto() (err error) {
 func (r *downloadCommand) Close() {
 	if r.db != nil {
 		r.db.Close()
+	}
+	if r.hashDb != nil {
+		r.hashDb.Close()
 	}
 }
 
