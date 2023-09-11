@@ -1,14 +1,11 @@
 package command
 
 import (
-	"encoding/json"
-	"errors"
 	"fmt"
+	"os"
 	"strconv"
-	"time"
 
 	"github.com/chyroc/icloudgo"
-	"github.com/dgraph-io/badger/v3"
 )
 
 type PhotoAssetModel struct {
@@ -18,59 +15,54 @@ type PhotoAssetModel struct {
 	Status int    `gorm:"column:status"`
 }
 
-func (r PhotoAssetModel) bytes() []byte {
-	val, _ := json.Marshal(r)
-	return val
-}
-
-func valToPhotoAssetModel(val []byte) (*PhotoAssetModel, error) {
-	res := new(PhotoAssetModel)
-	return res, json.Unmarshal(val, res)
+func (r *downloadCommand) dalInit() error {
+	_, err := r.db.Exec("CREATE TABLE if not exists assets(id text, data text, status integer, PRIMARY KEY (\"id\"))")
+	return err
 }
 
 func (r *downloadCommand) dalAddAssets(assets []*icloudgo.PhotoAsset) error {
 	r.lock.Lock()
 	defer r.lock.Unlock()
-	return r.db.Update(func(txn *badger.Txn) error {
-		for _, v := range assets {
-			po := &PhotoAssetModel{
-				ID:     v.ID(),
-				Data:   string(v.Bytes()),
-				Status: 0,
-			}
-			if err := txn.Set(r.keyAssert(v.ID()), po.bytes()); err != nil {
-				return err
-			}
+
+	tx, err := r.db.Begin()
+	if err != nil {
+		return err
+	}
+	stmt, err := tx.Prepare("replace into assets(id, data, status) values(?, ?, ?)")
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+	for _, v := range assets {
+		_, err = stmt.Exec(v.ID(), string(v.Bytes()), 0)
+		if err != nil {
+			return err
 		}
-		return nil
-	})
+	}
+	return tx.Commit()
 }
 
 func (r *downloadCommand) dalDeleteAsset(id string) error {
 	r.lock.Lock()
 	defer r.lock.Unlock()
 
-	return r.db.Update(func(txn *badger.Txn) error {
-		return txn.Delete(r.keyAssert(id))
-	})
+	_, err := r.db.Exec(fmt.Sprintf("delete from assets where id ='%s'", id))
+	return err
 }
 
 func (r *downloadCommand) dalCountUnDownloadAssets() (cnt int) {
 	r.lock.Lock()
 	defer r.lock.Unlock()
 
-	cnt = 0
-	r.db.Update(func(txn *badger.Txn) error {
-		opts := badger.DefaultIteratorOptions
-		opts.PrefetchValues = false
-		it := txn.NewIterator(opts)
-		defer it.Close()
-		for it.Seek(r.keyAssertPrefix()); it.ValidForPrefix(r.keyAssertPrefix()); it.Next() {
-			cnt = cnt + 1
-		}
-		return nil
-	})
-
+	row, err := r.db.Query("select count(*) as cnt from assets ")
+	if err != nil {
+		return 0
+	}
+	defer row.Close()
+	err = row.Scan(&cnt)
+	if err != nil {
+		return 0
+	}
 	return cnt
 }
 
@@ -79,26 +71,32 @@ func (r *downloadCommand) dalGetUnDownloadAssets(status *int) ([]*PhotoAssetMode
 	defer r.lock.Unlock()
 
 	pos := []*PhotoAssetModel{}
-	err := r.db.Update(func(txn *badger.Txn) error {
-		it := txn.NewIterator(badger.DefaultIteratorOptions)
-		defer it.Close()
-		for it.Seek(r.keyAssertPrefix()); it.ValidForPrefix(r.keyAssertPrefix()); it.Next() {
-			val, err := it.Item().ValueCopy(nil)
-			if err != nil {
-				return err
-			}
-			po, err := valToPhotoAssetModel(val)
-			if err != nil {
-				return err
-			}
-			if status == nil {
-				pos = append(pos, po)
-			} else if po.Status == *status {
-				pos = append(pos, po)
-			}
+
+	rows, err := r.db.Query("select id, data, status from assets")
+	if err != nil {
+		return pos, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id string
+		var data string
+		var stat int
+		err = rows.Scan(&id, &data, &stat)
+		if err != nil {
+			return pos, err
 		}
-		return nil
-	})
+		po := &PhotoAssetModel{
+			ID:     id,
+			Data:   data,
+			Status: stat,
+		}
+		if status == nil {
+			pos = append(pos, po)
+		} else if po.Status == *status {
+			pos = append(pos, po)
+		}
+	}
+	err = rows.Err()
 
 	return pos, err
 }
@@ -107,25 +105,12 @@ func (r *downloadCommand) dalSetDownloaded(id string) error {
 	r.lock.Lock()
 	defer r.lock.Unlock()
 
-	return r.db.Update(func(txn *badger.Txn) error {
-		if r.DelDownloaded {
-			return txn.Delete(r.keyAssert(id))
-		}
-		item, err := txn.Get(r.keyAssert(id))
-		if err != nil {
-			return err
-		}
-		val, err := item.ValueCopy(nil)
-		if err != nil {
-			return err
-		}
-		po, err := valToPhotoAssetModel(val)
-		if err != nil {
-			return err
-		}
-		po.Status = 1
-		return txn.Set(r.keyAssert(id), po.bytes())
-	})
+	if r.DelDownloaded {
+		_, err := r.db.Exec(fmt.Sprintf("delete from assets where id ='%s'", id))
+		return err
+	}
+	_, err := r.db.Exec(fmt.Sprintf("update assets set status=1 where id ='%s'", id))
+	return err
 }
 
 func (r *downloadCommand) keyAssertPrefix() []byte {
@@ -145,69 +130,45 @@ func (r *downloadCommand) dalGetDownloadOffset(albumSize int) int {
 	}
 
 	var result int
-	_ = r.db.Update(func(txn *badger.Txn) error {
-		offset, err := r.getDownloadOffset(txn, false)
-		if err != nil {
-			if errors.Is(err, badger.ErrKeyNotFound) {
-				return nil
-			}
-			fmt.Printf("[icloudgo] [offset] get db offset err: %s, reset to 0\n", err)
-			return nil
+	offset, err := r.getDownloadOffset(false)
+	if err != nil {
+		fmt.Printf("[icloudgo] [offset] get db offset err: %s, reset to 0\n", err)
+		return 0
+	}
+	fmt.Printf("[icloudgo] [offset] get db offset: %d\n", offset)
+	if offset > albumSize {
+		result = 0
+		if err = r.saveDownloadOffset(0, false); err != nil {
+			fmt.Printf("[icloudgo] [offset] db offset=%d, album_size=%d, reset to 0, and save_db failed: %s\n", offset, albumSize, err)
+		} else {
+			fmt.Printf("[icloudgo] [offset] db offset=%d, album_size=%d, reset to 0\n", offset, albumSize)
 		}
-		fmt.Printf("[icloudgo] [offset] get db offset: %d\n", offset)
-		if offset > albumSize {
-			result = 0
-			if err = r.saveDownloadOffset(txn, 0, false); err != nil {
-				fmt.Printf("[icloudgo] [offset] db offset=%d, album_size=%d, reset to 0, and save_db failed: %s\n", offset, albumSize, err)
-			} else {
-				fmt.Printf("[icloudgo] [offset] db offset=%d, album_size=%d, reset to 0\n", offset, albumSize)
-			}
-		}
-		result = offset
-		return nil
-	})
+	}
+	result = offset
 	return result
 }
 
-func (r *downloadCommand) getDownloadOffset(txn *badger.Txn, needLock bool) (int, error) {
+func (r *downloadCommand) getDownloadOffset(needLock bool) (int, error) {
 	if needLock {
 		r.lock.Lock()
 		defer r.lock.Unlock()
 	}
-	item, err := txn.Get(r.keyOffset())
+	data, err := os.ReadFile("offset")
 	if err != nil {
-		return 0, err
-	} else if item.IsDeletedOrExpired() {
-		return 0, badger.ErrKeyNotFound
+		return 0, nil
 	}
-	val, err := item.ValueCopy(nil)
-	if err != nil {
-		return 0, err
-	}
-	offset, err := strconv.Atoi(string(val))
+	offset, err := strconv.Atoi(string(data))
 	if err != nil {
 		return 0, err
 	}
 	return offset, nil
 }
 
-func (r *downloadCommand) saveDownloadOffset(txn *badger.Txn, offset int, needLock bool) error {
+func (r *downloadCommand) saveDownloadOffset(offset int, needLock bool) error {
 	if needLock {
 		r.lock.Lock()
 		defer r.lock.Unlock()
 	}
-	if txn == nil {
-		return r.db.Update(func(txn *badger.Txn) error {
-			e := badger.NewEntry(r.keyOffset(), []byte(strconv.Itoa(offset)))
-			e.ExpiresAt = uint64(time.Now().Add(time.Hour * 12).Unix())
-			return txn.SetEntry(e)
-		})
-	}
-	e := badger.NewEntry(r.keyOffset(), []byte(strconv.Itoa(offset)))
-	e.ExpiresAt = uint64(time.Now().Add(time.Hour * 12).Unix())
-	return txn.SetEntry(e)
-}
-
-func (r *downloadCommand) keyOffset() []byte {
-	return []byte("download_offset_" + r.AlbumName)
+	err := os.WriteFile("offset", []byte(fmt.Sprintf("%d", offset)), 0644)
+	return err
 }

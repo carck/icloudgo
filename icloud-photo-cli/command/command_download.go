@@ -14,7 +14,6 @@ import (
 
 	"github.com/chyroc/icloudgo"
 	"github.com/chyroc/icloudgo/internal"
-	"github.com/dgraph-io/badger/v3"
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/urfave/cli/v2"
 )
@@ -138,7 +137,7 @@ type downloadCommand struct {
 
 	client        *icloudgo.Client
 	photoCli      *icloudgo.PhotoService
-	db            *badger.DB
+	db            *sql.DB
 	hashDb        *sql.DB
 	lock          *sync.Mutex
 	exit          chan struct{}
@@ -186,7 +185,7 @@ func newDownloadCommand(c *cli.Context) (*downloadCommand, error) {
 	}
 
 	dbPath := cli.ConfigPath("badger.db")
-	db, err := badger.Open(badger.DefaultOptions(dbPath))
+	db, err := sql.Open("sqlite3", dbPath)
 	if err != nil {
 		return nil, err
 	}
@@ -202,6 +201,9 @@ func newDownloadCommand(c *cli.Context) (*downloadCommand, error) {
 	cmd.photoCli = photoCli
 	cmd.db = db
 
+	if err = cmd.dalInit(); err != nil {
+                return nil, err
+        }
 	return cmd, nil
 }
 
@@ -248,7 +250,7 @@ func (r *downloadCommand) saveMeta() (err error) {
 			if err := r.dalAddAssets(assets); err != nil {
 				return err
 			}
-			if err := r.saveDownloadOffset(nil, offset, true); err != nil {
+			if err := r.saveDownloadOffset(offset, true); err != nil {
 				return err
 			}
 			fmt.Printf("[icloudgo] [meta] update download offst to %d\n", offset)

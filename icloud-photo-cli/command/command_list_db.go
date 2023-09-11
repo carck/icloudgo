@@ -1,11 +1,11 @@
 package command
 
 import (
+	"database/sql"
 	"fmt"
 	"sync"
 
 	"github.com/chyroc/icloudgo"
-	"github.com/dgraph-io/badger/v3"
 	"github.com/urfave/cli/v2"
 )
 
@@ -32,7 +32,7 @@ func ListDB(c *cli.Context) error {
 
 	dbPath := cli.ConfigPath("badger.db")
 	fmt.Println("db.path", dbPath)
-	db, err := badger.Open(badger.DefaultOptions(dbPath))
+	db, err := sql.Open("sqlite3", dbPath)
 	if err != nil {
 		return err
 	}
@@ -43,6 +43,9 @@ func ListDB(c *cli.Context) error {
 	}
 	defer r.Close()
 
+	if err := r.dalInit(); err != nil {
+		return err
+	}
 	pos, err := r.dalGetUnDownloadAssets(nil)
 	if err != nil {
 		return err
