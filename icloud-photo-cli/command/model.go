@@ -30,12 +30,14 @@ func (r *downloadCommand) dalAddAssets(assets []*icloudgo.PhotoAsset) error {
 	}
 	stmt, err := tx.Prepare("replace into assets(id, data, status) values(?, ?, ?)")
 	if err != nil {
+		tx.Rollback()
 		return err
 	}
 	defer stmt.Close()
 	for _, v := range assets {
 		_, err = stmt.Exec(v.ID(), string(v.Bytes()), 0)
 		if err != nil {
+			tx.Rollback()
 			return err
 		}
 	}
@@ -54,12 +56,7 @@ func (r *downloadCommand) dalCountUnDownloadAssets() (cnt int) {
 	r.lock.Lock()
 	defer r.lock.Unlock()
 
-	row, err := r.db.Query("select count(*) as cnt from assets ")
-	if err != nil {
-		return 0
-	}
-	defer row.Close()
-	err = row.Scan(&cnt)
+	err := r.db.QueryRow("select count(*) as cnt from assets ").Scan(&cnt)
 	if err != nil {
 		return 0
 	}
@@ -169,6 +166,6 @@ func (r *downloadCommand) saveDownloadOffset(offset int, needLock bool) error {
 		r.lock.Lock()
 		defer r.lock.Unlock()
 	}
-	err := os.WriteFile("offset", []byte(fmt.Sprintf("%d", offset)), 0644)
+	err := os.WriteFile("offset", []byte(strconv.Itoa(offset)), 0644)
 	return err
 }
