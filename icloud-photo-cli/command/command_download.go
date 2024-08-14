@@ -448,7 +448,7 @@ func (r *downloadCommand) downloadTo(pickReason string, photo *icloudgo.PhotoAss
 	defer func() {
 		diff := time.Now().Sub(start)
 		speed := float64(photo.Size(version)) / 1024 / diff.Seconds()
-		if err != nil && !errors.Is(err, internal.ErrResourceGone) && !strings.Contains(err.Error(), "no such host") {
+		if err != nil {
 			fmt.Printf("[icloudgo] [download] fail %v, %v, %v/%v %.2fKB/s err=%s\n", saveName, photo.Filename(), photo.FormatSize(version), diff, speed, err)
 		} else {
 			fmt.Printf("[icloudgo] [download] [%s] succ %v, %v, %v/%v %.2fKB/s\n", pickReason, saveName, photo.Filename(), photo.FormatSize(version), diff, speed)
@@ -463,6 +463,9 @@ func (r *downloadCommand) downloadTo(pickReason string, photo *icloudgo.PhotoAss
 				continue
 			}
 			return err
+		} else {
+			fmt.Printf("ddbreak\n")
+			break
 		}
 	}
 
