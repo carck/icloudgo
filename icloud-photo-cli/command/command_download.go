@@ -292,7 +292,7 @@ func (r *downloadCommand) download() (err error) {
 	short := time.Minute
 	long := time.Hour
 	timer := time.NewTimer(time.Second / 10) // 立刻开始
-	download := func() {
+	downloadWork := func() {
 		fmt.Printf("[icloudgo] [download] start run %s\n", time.Now())
 		if err := r.downloadFromDatabase(); err != nil {
 			fmt.Printf("[icloudgo] [download] download err: %s, sleep %s", err, short)
@@ -309,9 +309,9 @@ func (r *downloadCommand) download() (err error) {
 	for {
 		select {
 		case <-r.startDownload:
-			download()
+			downloadWork()
 		case <-timer.C:
-			download()
+			downloadWork()
 		}
 	}
 }
@@ -458,6 +458,8 @@ func (r *downloadCommand) downloadTo(pickReason string, photo *icloudgo.PhotoAss
 	for i := 0; i < retry; i++ {
 		if err := photo.DownloadTo(version, tmpPath); err != nil {
 			if strings.Contains(err.Error(), "i/o timeout") && i < retry-1 {
+				fmt.Printf("[icloudgo] [download] timeout [%s] %v retry", saveName, i)
+				time.Sleep(time.Second * 5)
 				continue
 			}
 			return err

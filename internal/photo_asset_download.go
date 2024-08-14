@@ -5,7 +5,9 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -27,20 +29,26 @@ func (r *PhotoAsset) IsLivePhoto() bool {
 }
 
 func (r *PhotoAsset) DownloadTo(version PhotoVersion, target string) error {
-	body, err := r.Download(version)
+	f, err := os.OpenFile(target, os.O_APPEND|os.O_RDWR|os.O_CREATE, 0o644)
+	if f != nil {
+		defer f.Close()
+	}
+
+	if err != nil {
+		return fmt.Errorf("open file error: %v", err)
+	}
+
+	info, err := f.Stat()
+	if err != nil {
+		return fmt.Errorf("stat file error: %v", err)
+	}
+
+	body, err := r.Download(version, info.Size())
 	if body != nil {
 		defer body.Close()
 	}
 	if err != nil {
 		return err
-	}
-
-	f, err := os.OpenFile(target, os.O_RDWR|os.O_CREATE, 0o644)
-	if f != nil {
-		defer f.Close()
-	}
-	if err != nil {
-		return fmt.Errorf("open file error: %v", err)
 	}
 
 	_, err = io.Copy(f, body)
@@ -57,7 +65,7 @@ func (r *PhotoAsset) DownloadTo(version PhotoVersion, target string) error {
 	return nil
 }
 
-func (r *PhotoAsset) Download(version PhotoVersion) (io.ReadCloser, error) {
+func (r *PhotoAsset) Download(version PhotoVersion, start int64) (io.ReadCloser, error) {
 	versionDetail, ok := r.getVersions()[version]
 	if !ok {
 		var keys []string
@@ -74,12 +82,25 @@ func (r *PhotoAsset) Download(version PhotoVersion) (io.ReadCloser, error) {
 			timeout = slowSecond
 		}
 	}
-
+	url := versionDetail.URL
+	if strings.Contains(versionDetail.URL, "${f}") {
+		name := filepath.Base(versionDetail.Filename)
+		name = strings.Replace(name, ".mov", ".MP4", -1)
+		name = strings.Replace(name, ".MOV", ".MP4", -1)
+		url = strings.Replace(url, "${f}", name, -1)
+	}
+	headers := map[string]string{}
+	if start > 0 {
+		fmt.Printf("resume download on %s %v\n", versionDetail.Filename, start)
+		headers = map[string]string{
+			"Range": "bytes=" + strconv.FormatInt(start, 10) + "-",
+		}
+	}
 	body, err := r.service.icloud.requestStream(&rawReq{
 		Method:       http.MethodGet,
-		URL:          versionDetail.URL,
-		Headers:      r.service.icloud.getCommonHeaders(map[string]string{}),
-		ExpectStatus: newSet[int](http.StatusOK),
+		URL:          url,
+		Headers:      r.service.icloud.getCommonHeaders(headers),
+		ExpectStatus: newSet[int](http.StatusOK, http.StatusPartialContent),
 		Timeout:      timeout,
 	})
 	if err != nil {
@@ -104,32 +125,35 @@ func (r *PhotoAsset) packVersion() map[PhotoVersion]*photoVersionDetail {
 
 	versions := map[PhotoVersion]*photoVersionDetail{
 		PhotoVersionOriginal: {
-			Filename: r.Filename(),
-			Width:    fields.ResOriginalWidth.Value,
-			Height:   fields.ResOriginalHeight.Value,
-			Size:     fields.ResOriginalRes.Value.Size,
-			URL:      fields.ResOriginalRes.Value.DownloadURL,
-			Type:     fields.ResOriginalFileType.Value,
+			Filename:    r.Filename(),
+			Width:       fields.ResOriginalWidth.Value,
+			Height:      fields.ResOriginalHeight.Value,
+			Size:        fields.ResOriginalRes.Value.Size,
+			URL:         fields.ResOriginalRes.Value.DownloadURL,
+			Type:        fields.ResOriginalFileType.Value,
+			FingerPrint: fields.ResOriginalFingerprint.Value,
 		},
 	}
 	if fields.ResOriginalVidComplRes.Value.Size != 0 {
 		versions[PhotoVersionOriginalVideo] = &photoVersionDetail{
-			Filename: extRegexp.ReplaceAllString(r.Filename(), ".MOV"),
-			Width:    fields.ResOriginalVidComplWidth.Value,
-			Height:   fields.ResOriginalVidComplHeight.Value,
-			Size:     fields.ResOriginalVidComplRes.Value.Size,
-			URL:      fields.ResOriginalVidComplRes.Value.DownloadURL,
-			Type:     fields.ResOriginalVidComplFileType.Value,
+			Filename:    extRegexp.ReplaceAllString(r.Filename(), ".MOV"),
+			Width:       fields.ResOriginalVidComplWidth.Value,
+			Height:      fields.ResOriginalVidComplHeight.Value,
+			Size:        fields.ResOriginalVidComplRes.Value.Size,
+			URL:         fields.ResOriginalVidComplRes.Value.DownloadURL,
+			Type:        fields.ResOriginalVidComplFileType.Value,
+			FingerPrint: fields.ResOriginalVidComplFingerprint.Value,
 		}
 	}
 	return versions
 }
 
 type photoVersionDetail struct {
-	Filename string `json:"filename"`
-	Width    int    `json:"width"`
-	Height   int    `json:"height"`
-	Size     int    `json:"size"`
-	URL      string `json:"url"`
-	Type     string `json:"type"`
+	Filename    string `json:"filename"`
+	Width       int    `json:"width"`
+	Height      int    `json:"height"`
+	Size        int    `json:"size"`
+	URL         string `json:"url"`
+	Type        string `json:"type"`
+	FingerPrint string `json:"fingerprint"`
 }
