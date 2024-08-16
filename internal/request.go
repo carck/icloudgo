@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"time"
 )
 
@@ -67,6 +68,18 @@ func (r *Client) doRequest(req *rawReq) (string, io.ReadCloser, error) {
 	if req.Stream {
 		if respErr != nil {
 			return "", nil, fmt.Errorf("%s %s failed, status %d, err: %s", req.Method, req.URL, status, respErr)
+		}
+		if t := resp.Header.Get("Retry-After"); t != "" {
+			if sec, err := strconv.Atoi(t); err == nil {
+				fmt.Printf("Retry after %d seconds\n", sec)
+				time.Sleep(time.Second * time.Duration(sec))
+			}
+		}
+		if t := resp.Header.Get("RetryAfter"); t != "" {
+			if sec, err := strconv.Atoi(t); err == nil {
+				fmt.Printf("Retry after %d seconds\n", sec)
+				time.Sleep(time.Second * time.Duration(sec))
+			}
 		}
 		if req.ExpectStatus != nil && req.ExpectStatus.Len() > 0 && !req.ExpectStatus.Has(status) {
 			return "", nil, fmt.Errorf("%s %s failed, expect status %v, but got %d", req.Method, req.URL, req.ExpectStatus.String(), status)
