@@ -457,7 +457,7 @@ func (r *downloadCommand) downloadTo(pickReason string, photo *icloudgo.PhotoAss
 	retry := 5
 	for i := 0; i < retry; i++ {
 		if err := photo.DownloadTo(version, tmpPath); err != nil {
-			if strings.Contains(err.Error(), "i/o timeout") && i < retry-1 {
+			if (strings.Contains(err.Error(), "i/o timeout") || strings.Contains(err.Error(), "unexpected EOF")) && i < retry-1 {
 				fmt.Printf("[icloudgo] [download] timeout [%s] %v retry", saveName, i)
 				time.Sleep(time.Second * 5)
 				continue
